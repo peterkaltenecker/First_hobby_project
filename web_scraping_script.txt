@@ -1,0 +1,166 @@
+from bs4 import BeautifulSoup as bs
+import requests
+import re
+import numpy as np
+import pandas as pd
+import random as rn
+import time as tm
+
+
+######################################
+# collecting data from only one page #
+######################################
+
+# using list comprehension while getting the data (author, book title, year of publication, ratings and the number of ratings)
+names = soup.find_all("a", class_="authorName")
+names = [i.get_text(strip=True) for i in names]   # list comprehension
+names = pd.Series(names)                          # turning it into a series
+
+titles = soup.find_all("a", class_="bookTitle")
+titles = [i.get_text(strip=True) for i in titles]
+titles = pd.Series(titles)
+
+publ = soup.find_all("span", class_="greyText smallText")
+publ = [str(i.get_text(strip=True))[-4:] for i in publ]
+publ = pd.Series(publ)
+
+avg_rating = soup.find_all("span", class_="greyText smallText")
+avg_rating = [str(i.get_text(strip=True))[11:15] for i in avg_rating]
+avg_rating = pd.Series(avg_rating)
+avg_rating = pd.to_numeric(avg_rating)      # converting strings into floats
+
+n_ratings = soup.find_all("span", class_="greyText smallText")
+n_ratings = [str(i.get_text(strip=True))[34:41] for i in n_ratings]
+n_ratings = [i.replace(",", "") for i in n_ratings]                   # removing the "," characters from the strings
+n_ratings = pd.Series(n_ratings)
+n_ratings = pd.to_numeric(n_ratings)                                  # converting strings into integers
+
+# checking if the conversions were right
+type(avg_rating[4])
+type(n_ratings[4])
+
+# creating a pandas dataframe
+coll_data = {'author': names,
+             'title': titles,
+             'published': publ,
+             'rating': avg_rating,
+             'n_ratings': n_ratings}
+
+coll_data = pd.DataFrame(coll_data, columns=['author', 'title', 'published', 'rating', 'n_ratings'])
+
+
+#######################################
+# collecting data from multiple pages #
+#######################################
+
+# while loop to scrape several info (author, book title, ratings and the number of ratings)
+p_no = 1
+authors = []
+titles = []
+avg_rating = []
+n_ratings = []
+
+while p_no != 11:
+    url = f"https://www.goodreads.com/list/show/264.Books_That_Everyone_Should_Read_At_Least_Once?page={p_no}"
+    response = requests.get(url)
+    html = response.content
+    soup = bs(html, "lxml")
+    names = soup.find_all("a", class_="authorName")
+    books = soup.find_all("a", class_="bookTitle")
+    ratings = soup.find_all("span", class_="minirating")
+    ratings2 = soup.find_all("span", class_="minirating")
+    for i in range(len(names)):
+        authors.append(names[i].get_text(strip=True))
+        titles.append(books[i].get_text(strip=True))
+        avg_rating.append(str(re.search(".....avg", ratings[i].get_text()))[-10:-6])
+        n_ratings.append(str(re.search("[0-9][0-9][0-9],[0-9][0-9][0-9],[0-9][0-9][0-9]|[0-9][0-9],[0-9][0-9][0-9],[0-9][0-9][0-9]|[0-9],[0-9][0-9][0-9],[0-9][0-9][0-9]|[0-9][0-9][0-9],[0-9][0-9][0-9]|[0-9][0-9],[0-9][0-9][0-9]|[0-9],[0-9][0-9][0-9]|[0-9][0-9][0-9]", ratings2[i].get_text()))[46:-2])
+    p_no += 1
+
+# note - there are 3 missing values in n_ratings
+
+# creating a table with the collected data
+authors = pd.Series(authors)
+titles = pd.Series(titles)
+
+avg_rating = pd.Series(avg_rating)
+avg_rating = pd.to_numeric(avg_rating)                     # converting strings to numeric
+
+n_ratings = [i.replace(",", "") for i in n_ratings]        # removing the "," characters from the strings
+n_ratings = pd.Series(n_ratings)
+n_ratings = pd.to_numeric(n_ratings)                       # converting strings to numeric
+
+coll_data = {'author': authors,
+             'title': titles,
+             'rating': avg_rating,
+             'n_ratings': n_ratings}
+
+coll_data = pd.DataFrame(coll_data, columns=['author', 'title', 'rating', 'n_ratings'])
+
+coll_data = coll_data.dropna()       # to remove lines with missing values
+
+coll_data.head(20)
+
+# sorting the data in a different order
+coll_data.sort_values(['author', 'title', 'rating'])
+
+# which book has the highest rating
+coll_data.sort_values('rating', ascending=False)[['author', 'title', 'rating']].head(10)
+
+# which book has the most ratings
+coll_data.sort_values('n_ratings', ascending=False)[['author', 'title', 'n_ratings']].head(10)
+
+
+########################################
+# collecting info about the best books #
+########################################
+
+# there is a winner best book each year in each category
+# the total number of votes in a genre and the amount of votes given to the winner book of a genre were scraped
+
+# defining the themes from which the data will be collected
+theme_list = ['fiction', 'mystery-thriller', 'historical-fiction', 'fantasy', 'romance', 'science-fiction', 'horror', 
+             'humor', 'nonfiction', 'history-biography', 'childrens', 'young-adult-fantasy', 'young-adult-fiction', 'poetry']
+
+# creating empty lists for data collection
+total_votes = []
+votes_bestbook = []
+year_list = []
+category_list = []
+
+# collecting the data
+for theme in theme_list:
+    for p_no in range(11, 23):
+        url = f"https://www.goodreads.com/choiceawards/best-{theme}-books-20{p_no}"
+        response = requests.get(url)
+        html = response.content
+        soup = bs(html, 'lxml')
+        all_votes = soup.find("div", class_="greyText gcaNumVotes").get_text(strip=True)
+        total_votes.append(str(re.search(".*,[0-9][0-9][0-9]", all_votes))[44:-2])
+        best_votes = soup.find("span", class_="greyText gcaNumVotes").get_text(strip=True)
+        votes_bestbook.append(str(re.search(".*,[0-9][0-9][0-9]", best_votes))[44:-2])
+        category_list.append(theme)
+        year_list.append("20" + str(p_no))
+        tm.sleep(rn.randint(1, 10))
+
+# converting string values into numeric
+total_votes = [i.replace(",", "") for i in total_votes]
+total_votes = pd.Series(total_votes)
+total_votes = pd.to_numeric(total_votes)
+
+votes_bestbook = [i.replace(",", "") for i in votes_bestbook]
+votes_bestbook = pd.Series(votes_bestbook)
+votes_bestbook = pd.to_numeric(votes_bestbook)
+
+# making the final dataframe
+coll_data = {'category': category_list,
+             'year': year_list, 
+             'total_votes': total_votes, 
+             'bestbook_votes': votes_bestbook}
+
+coll_data = pd.DataFrame(coll_data, columns=['category', 'year', 'total_votes', 'bestbook_votes'])
+
+# reorganising the data
+coll_data = coll_data.sort_values(['year', 'category'])
+
+# saving the scraped data
+coll_data.to_csv('.../goodreads_best_book_cat_data.csv', index=False)
