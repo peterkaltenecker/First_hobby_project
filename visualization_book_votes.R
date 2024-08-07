@@ -8,14 +8,16 @@ library(scales)
 scraped_data_df <- read_csv("goodreads_best_book_cat_data.csv", 
                             col_types = cols(year = col_integer(), 
                                              total_votes = col_integer(), 
-                                             bestbook_votes = col_integer()))
+                                             bestbook_votes = col_integer()
+                                            )
+                           )
 
 #######################################
 # visualization of the collected data #
 #######################################
 
 # defining colors for the categories of votes
-colors <- c("Total votes" = "#3371ff", 'Best book votes' = "#ff9633")
+colors <- c("Total votes" = "#3371ff", "Best book votes" = "#ff9633")
 
 # plot
 scraped_data_df %>% 
